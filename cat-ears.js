@@ -1,6 +1,6 @@
 /* 猫耳部件（定稿版）：直线三角剪影 + 内耳。
    耳根沿当前头型轮廓生成（对 body path 每条边在 x 处求交取上包络），8 个头型都贴边不悬空。
-   EAR_SCALE 按 01-sizes 里 0.80 档的观感定：耳尖高出头顶约 31px（430 视口）。 */
+   尺寸取 01-sizes 里 1.00 档：耳尖高出头顶约 42px（430 视口，bot 288）。 */
 (() => {
   const MID = 114.27;
   const BOT = document.querySelector('#bot');
@@ -20,7 +20,7 @@
   };
 
   const Q = new URLSearchParams(location.search);
-  const EAR_SCALE = Number(Q.get('earsize') || 0.8);   // 相对整耳（含耳根）等比缩放
+  const EAR_SCALE = Number(Q.get('earsize') || 1);     // 相对整耳（含耳根）等比缩放
   const WITH_INNER = Q.get('noinner') !== '1';
   const DEBUG = Q.get('edebug') === '1';
 
