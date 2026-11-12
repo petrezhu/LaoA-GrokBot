@@ -17,11 +17,17 @@
     drop:     [46, 92, 64, -6],
     triangle: [74, 104, 54, -2]
   };
-  const BOWS = { triangle: 0, concave: 0.24, convex: -0.22 };
+  // 每条边单独给偏移量：inner=靠头中轴那条，outer=朝外那条
+  const BOWS = {
+    triangle:  { inner: 0,     outer: 0 },
+    concave:   { inner: 0.24,  outer: 0.24 },
+    convex:    { inner: -0.22, outer: -0.22 },
+    outerline: { inner: 0.24,  outer: 0 }
+  };
 
   const Q = new URLSearchParams(location.search);
   const STYLE = Q.get('earstyle') || 'concave';
-  const BOW = BOWS[STYLE] ?? BOWS.concave;
+  const BOW = BOWS[STYLE] || BOWS.concave;
   const WITH_INNER = Q.get('noinner') !== '1';
   const DEBUG = Q.get('edebug') === '1';
 
@@ -105,14 +111,14 @@
   }
 
   /* 一段边：直线或二次贝塞尔；控制点沿弦的法线朝耳内偏移 */
-  function seg(p, t, center) {
-    if (!BOW) return `L${t[0].toFixed(2)} ${t[1].toFixed(2)}`;
+  function seg(p, t, center, bow) {
+    if (!bow) return `L${t[0].toFixed(2)} ${t[1].toFixed(2)}`;
     const mx = (p[0] + t[0]) / 2, my = (p[1] + t[1]) / 2;
     let nx = -(t[1] - p[1]), ny = t[0] - p[0];
     const l = Math.hypot(nx, ny) || 1;
     nx /= l; ny /= l;
     if ((center[0] - mx) * nx + (center[1] - my) * ny < 0) { nx = -nx; ny = -ny; }
-    const off = BOW * l;
+    const off = bow * l;
     return `Q${(mx + nx * off).toFixed(2)} ${(my + ny * off).toFixed(2)} ${t[0].toFixed(2)} ${t[1].toFixed(2)}`;
   }
 
@@ -125,8 +131,8 @@
     const c = [cx, cy];
     let d = `M${pts[0][0].toFixed(2)} ${pts[0][1].toFixed(2)}`;
     for (let i = 1; i < pts.length; i++) d += `L${pts[i][0].toFixed(2)} ${pts[i][1].toFixed(2)}`;
-    d += seg(pts[pts.length - 1], T, c);
-    d += seg(T, pts[0], c);
+    d += seg(pts[pts.length - 1], T, c, BOW.inner);   // 内侧
+    d += seg(T, pts[0], c, BOW.outer);                 // 外侧
     return d + 'Z';
   }
 
