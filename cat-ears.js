@@ -1,5 +1,6 @@
-/* 猫耳部件：耳根沿当前头型轮廓采样生成，因此 8 个头型都能贴边，不悬空。
-   耳形由二次贝塞尔控制点偏移量决定：0=直线三角，正=内凹抛物线，负=外凸圆润。 */
+/* 猫耳部件（定稿版）：直线三角剪影 + 内耳。
+   耳根沿当前头型轮廓生成（对 body path 每条边在 x 处求交取上包络），8 个头型都贴边不悬空。
+   EAR_SCALE 按 01-sizes 里 0.80 档的观感定：耳尖高出头顶约 31px（430 视口）。 */
 (() => {
   const MID = 114.27;
   const BOT = document.querySelector('#bot');
@@ -14,27 +15,19 @@
     capsule:  [40, 92, 58, -2],
     hex:      [38, 90, 58, -6],
     cloud:    [36, 88, 62, -6],
-    drop:     [46, 92, 64, -6],
+    drop:     [60, 100, 64, -6],
     triangle: [74, 104, 54, -2]
-  };
-  // 每条边单独给偏移量：inner=靠头中轴那条，outer=朝外那条
-  const BOWS = {
-    triangle:  { inner: 0,     outer: 0 },
-    concave:   { inner: 0.24,  outer: 0.24 },
-    convex:    { inner: -0.22, outer: -0.22 },
-    outerline: { inner: 0.24,  outer: 0 }
   };
 
   const Q = new URLSearchParams(location.search);
-  const STYLE = Q.get('earstyle') || 'concave';
-  const BOW = BOWS[STYLE] || BOWS.concave;
+  const EAR_SCALE = Number(Q.get('earsize') || 0.8);   // 相对整耳（含耳根）等比缩放
   const WITH_INNER = Q.get('noinner') !== '1';
   const DEBUG = Q.get('edebug') === '1';
 
   const group = document.querySelector('#part-cat-ears');
 
-  /* 解析 path 的 d（M/L/C/Q/Z，覆盖本项目的 8 个头型），按约 2 单位密度采样成折线。
-     比逐点 getPointAtLength 快两个数量级，且第一次切头型也不会卡。 */
+  /* 解析 path 的 d（M/L/C/Q/Z，覆盖本项目的 8 个头型），按约 1.2 单位密度采样成折线。
+     比逐点 getPointAtLength 快两个数量级，且第一次切头型也不卡。 */
   const POLY_CACHE = new Map();
   function polygonize(d) {
     if (POLY_CACHE.has(d)) return POLY_CACHE.get(d);
@@ -110,30 +103,19 @@
     return [mx + Math.cos(r) * height, my + Math.sin(r) * height];
   }
 
-  /* 一段边：直线或二次贝塞尔；控制点沿弦的法线朝耳内偏移 */
-  function seg(p, t, center, bow) {
-    if (!bow) return `L${t[0].toFixed(2)} ${t[1].toFixed(2)}`;
-    const mx = (p[0] + t[0]) / 2, my = (p[1] + t[1]) / 2;
-    let nx = -(t[1] - p[1]), ny = t[0] - p[0];
-    const l = Math.hypot(nx, ny) || 1;
-    nx /= l; ny /= l;
-    if ((center[0] - mx) * nx + (center[1] - my) * ny < 0) { nx = -nx; ny = -ny; }
-    const off = bow * l;
-    return `Q${(mx + nx * off).toFixed(2)} ${(my + ny * off).toFixed(2)} ${t[0].toFixed(2)} ${t[1].toFixed(2)}`;
+  /* 整耳（耳根折线 + 耳尖）绕耳根弦中点等比缩放；耳根因此落到头型内部，依旧贴边 */
+  function shrinkTo(base, tip, k) {
+    const m = [(base[0][0] + base[base.length - 1][0]) / 2, (base[0][1] + base[base.length - 1][1]) / 2];
+    const f = p => [m[0] + (p[0] - m[0]) * k, m[1] + (p[1] - m[1]) * k];
+    return { base: base.map(f), tip: f(tip) };
   }
 
   function pathFor(base, tip, mirror) {
     const x = v => (mirror ? 2 * MID - v : v);
-    const pts = base.map(([px, py]) => [x(px), py]);
-    const T = [x(tip[0]), tip[1]];
-    const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length;
-    const cy = (pts.reduce((s, p) => s + p[1], 0) + T[1]) / (pts.length + 1);
-    const c = [cx, cy];
-    let d = `M${pts[0][0].toFixed(2)} ${pts[0][1].toFixed(2)}`;
-    for (let i = 1; i < pts.length; i++) d += `L${pts[i][0].toFixed(2)} ${pts[i][1].toFixed(2)}`;
-    d += seg(pts[pts.length - 1], T, c, BOW.inner);   // 内侧
-    d += seg(T, pts[0], c, BOW.outer);                 // 外侧
-    return d + 'Z';
+    let d = `M${x(base[0][0]).toFixed(2)} ${base[0][1].toFixed(2)}`;
+    for (let i = 1; i < base.length; i++) d += `L${x(base[i][0]).toFixed(2)} ${base[i][1].toFixed(2)}`;
+    d += `L${x(tip[0]).toFixed(2)} ${tip[1].toFixed(2)}Z`;
+    return d;
   }
 
   function innerOf(base, tip) {
@@ -151,8 +133,8 @@
   function build() {
     const shape = currentShape();
     const [x1, x2, T, lean] = ANCHORS[shape] || ANCHORS.blob;
-    const base = topEnvelope(x1, x2);
-    const tip = tipOf(base, T, lean);
+    const raw = topEnvelope(x1, x2);
+    const { base, tip } = shrinkTo(raw, tipOf(raw, T, lean), EAR_SCALE);
     const out = { left: pathFor(base, tip, false), right: pathFor(base, tip, true), shape };
     if (WITH_INNER) {
       const ib = innerOf(base, tip);
@@ -182,5 +164,5 @@
     group.classList.add('enabled');
   }
 
-  window.CatEars = { sync, data: () => snap, style: STYLE, bow: BOW };
+  window.CatEars = { sync, data: () => snap, scale: EAR_SCALE };
 })();
